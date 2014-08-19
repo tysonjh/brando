@@ -9,7 +9,7 @@ In your build.sbt
 
     resolvers += "http://chrisdinn.github.io/releases/"
 
-    libraryDependencies += "com.digital-achiever" %% "brando" % "0.3.0"
+    libraryDependencies += "com.digital-achiever" %% "brando" % "0.4.0"
 
 ### Getting started
 
@@ -108,11 +108,11 @@ Currently, the possible messages sent to each listener include the following:
 
 All these messages inherit from the `BrandoStateChange` trait.
 
-### Presharding
+### Sharding
 
-Brando provides preliminary support for sharding (AKA "Presharding"), as outlined [in the Redis documentation](http://redis.io/topics/partitioning) and in [this blog post from antirez](http://oldblog.antirez.com/post/redis-presharding.html).
+Brando provides support for sharding, as outlined [in the Redis documentation](http://redis.io/topics/partitioning) and in [this blog post from antirez](http://oldblog.antirez.com/post/redis-presharding.html).
 
-To use it, simply create an instance of `ShardManager`, passing it a list of Redis shards you'd like it to connect to. From there, we simply create a pool of `Brando` instances - one for each shard.
+To use it, simply create an instance of `ShardManager`, passing it a list of Redis shards you'd like it to connect to. From there, we create a pool of `Brando` instances - one for each shard.
 
 	val shards = Seq(Shard("redis1", "10.0.0.1", 6379),
 					 Shard("redis2", "10.0.0.2", 6379),
@@ -120,11 +120,14 @@ To use it, simply create an instance of `ShardManager`, passing it a list of Red
 
 	val shardManager = context.actorOf(ShardManager(shards))
 
-Once an instance of `ShardManager` has been created, send it commands via the `ShardRequest` class.
+Once an instance of `ShardManager` has been created, send it commands via a `Tuple2[ByteString, Request]` or using the `apply` method of the `ShardRequest` object.
 
-	shardManager ! ShardRequest(ByteString("GET"), ByteString(mykey))
+	shardManager ! (ByteString("shardkey"), Request(ByteString("GET"), ByteString("mykey"))
+	shardManager ! ShardRequest("shardkey", "GET", "mykey")
 
-Note that `ShardRequest` explicitly requires a key for all operations. This is because the key is used to determined which shard each request should be forwarded to. In this context, operations which operate on multiple keys (e.g. `MSET`, `MGET`) or no keys at all (e.g. `SELECT`, `FLUSHDB`) should be avoided, as they break the Redis sharding model.
+These two statements are equivalent and result in a "GET mykey" command being issued to the shard selected using "shardkey" in the hashing function. Note that `ShardRequest` explicitly requires a key for all operations. This is because the key is used to determined which shard each request should be forwarded to. In this context, operations which operate on multiple keys (e.g. `MSET`, `MGET`) or no keys at all (e.g. `SELECT`, `FLUSHDB`) should be avoided, as they break the Redis sharding model. With this warning in mind, broadcasting to all shards is as simple as sending the `ShardManager` a `Request` object,
+
+        shardManager ! Request(ByteString("LPOP", ByteString("mylist"))) 
 
 Individual shards can have their configuration updated on the fly. To do this, send a `Shard` message to `ShardManager`.
 
